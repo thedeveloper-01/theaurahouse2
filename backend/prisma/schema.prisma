@@ -1,0 +1,195 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  username  String   @unique @db.VarChar(32)
+  displayName String? @map("display_name") @db.VarChar(100)
+  email     String?  @unique @db.VarChar(255)
+  bio       String?  @db.Text
+  avatarUrl String?  @map("avatar_url") @db.Text
+  password  String   @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  posts        Post[]
+  comments     Comment[]
+  likes        Like[]
+  followers    Follow[] @relation("Follower")
+  followees    Follow[] @relation("Followee")
+  notifications Notification[]
+  deviceTokens DeviceToken[]
+  conversationsAsUser1 Conversation[] @relation("User1")
+  conversationsAsUser2 Conversation[] @relation("User2")
+  sentMessages Message[] @relation("Sender")
+  receivedMessages Message[] @relation("Receiver")
+
+  @@map("users")
+}
+
+model Post {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  text        String?  @db.Text
+  mediaJson   Json?    @map("media_json") // Array of MediaItem
+  isVideo     Boolean  @default(false) @map("is_video")
+  privacy     String   @default("public") @db.VarChar(20)
+  likeCount   Int      @default(0) @map("like_count")
+  commentCount Int     @default(0) @map("comment_count")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comments  Comment[]
+  likes     Like[]
+
+  @@index([createdAt(sort: Desc)])
+  @@index([userId])
+  @@map("posts")
+}
+
+model Comment {
+  id             String   @id @default(uuid()) @db.Uuid
+  postId         String   @map("post_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  parentCommentId String? @map("parent_comment_id") @db.Uuid
+  text           String   @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  post          Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  parentComment Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id])
+  replies       Comment[] @relation("CommentReplies")
+
+  @@index([postId])
+  @@index([userId])
+  @@map("comments")
+}
+
+model Like {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([postId])
+  @@index([userId])
+  @@map("likes")
+}
+
+model Follow {
+  followerId String   @map("follower_id") @db.Uuid
+  followeeId String   @map("followee_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  follower User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followee User @relation("Followee", fields: [followeeId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followeeId])
+  @@index([followerId])
+  @@index([followeeId])
+  @@map("follows")
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  type      String   @db.VarChar(40)
+  payload   Json?
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model DeviceToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  token      String   @db.Text
+  platform   String   @db.VarChar(20) // 'android', 'ios', 'web'
+  deviceId   String?  @map("device_id") @db.VarChar(255)
+  appVersion String?  @map("app_version") @db.VarChar(50)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastUsedAt DateTime @default(now()) @map("last_used_at") @db.Timestamptz(6)
+  isActive   Boolean  @default(true) @map("is_active")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Note: Prisma doesn't support partial unique constraints directly
+  // We'll handle this in application logic
+  @@index([userId, deviceId, platform])
+  @@index([userId])
+  @@index([token])
+  @@index([userId, isActive])
+  @@map("device_tokens")
+}
+
+model Conversation {
+  id        String   @id @default(uuid()) @db.Uuid
+  user1Id   String   @map("user1_id") @db.Uuid
+  user2Id   String   @map("user2_id") @db.Uuid
+  lastMessageId String? @map("last_message_id") @db.Uuid
+  lastMessageText String? @map("last_message_text") @db.Text
+  lastMessageTime DateTime? @map("last_message_time") @db.Timestamptz(6)
+  user1UnreadCount Int @default(0) @map("user1_unread_count")
+  user2UnreadCount Int @default(0) @map("user2_unread_count")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  user1 User @relation("User1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2 User @relation("User2", fields: [user2Id], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
+  @@index([updatedAt(sort: Desc)])
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(uuid()) @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  senderId       String   @map("sender_id") @db.Uuid
+  receiverId     String   @map("receiver_id") @db.Uuid
+  text           String   @db.Text
+  isRead         Boolean  @default(false) @map("is_read")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("Sender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver     User         @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@map("messages")
+}
+
